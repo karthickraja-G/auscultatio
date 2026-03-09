@@ -1,0 +1,949 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AttendanceIQ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <style>
+      .hidden-view {
+        display: none;
+      }
+      .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+      }
+      .loading-overlay.active {
+        opacity: 1;
+        pointer-events: all;
+      }
+      .btn-loading {
+        position: relative;
+        pointer-events: none;
+        opacity: 0.7;
+      }
+      .btn-loading::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 16px;
+        height: 16px;
+        margin: -8px 0 0 -8px;
+        border: 2px solid #ffffff;
+        border-radius: 50%;
+        border-top-color: transparent;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .error-message {
+        color: #dc2626;
+        background-color: #fef2f2;
+        border: 1px solid #fecaca;
+        padding: 8px 12px;
+        border-radius: 6px;
+        margin-top: 8px;
+      }
+      .success-message {
+        color: #16a34a;
+        background-color: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        padding: 8px 12px;
+        border-radius: 6px;
+        margin-top: 8px;
+      }
+      .input-error {
+        border-color: #dc2626 !important;
+        box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1) !important;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+    </style>
+  </head>
+
+  <body
+    class="bg-gray-100 text-gray-800 font-sans flex h-screen overflow-hidden"
+  >
+    <!-- ═══ SIDEBAR ═══════════════════════════════════════════ -->
+    <aside
+      class="w-64 bg-gray-900 text-white flex flex-col shadow-2xl flex-shrink-0"
+    >
+      <div class="p-5 flex items-center gap-3 border-b border-gray-700">
+        <div class="bg-red-500 font-extrabold px-2.5 py-1.5 rounded-lg text-sm">
+          AI
+        </div>
+        <div>
+          <h1 class="text-lg font-bold">AttendanceIQ</h1>
+          <p class="text-xs text-gray-400">Flask + MySQL</p>
+        </div>
+      </div>
+
+      <nav class="flex-1 p-4 space-y-1">
+        <p
+          class="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3 px-2"
+        >
+          Navigation
+        </p>
+        <button
+          id="nav-students"
+          onclick="switchTab('students')"
+          class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white transition-all text-left"
+        >
+          <i class="fa-solid fa-users w-4 text-indigo-400"></i> Manage Students
+        </button>
+        <button
+          id="nav-attendance"
+          onclick="switchTab('attendance')"
+          class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white transition-all text-left"
+        >
+          <i class="fa-solid fa-clipboard-check w-4 text-green-400"></i> Mark
+          Attendance
+        </button>
+        <button
+          id="nav-records"
+          onclick="switchTab('records')"
+          class="nav-btn w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white transition-all text-left"
+        >
+          <i class="fa-solid fa-chart-bar w-4 text-blue-400"></i> View Records
+        </button>
+      </nav>
+    </aside>
+
+    <!-- ═══ MAIN ═══════════════════════════════════════════════ -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <!-- Topbar -->
+      <header
+        class="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between shadow-sm flex-shrink-0"
+      >
+        <div>
+          <h2 id="page-title" class="text-xl font-bold text-gray-800">
+            Manage Students
+          </h2>
+          <p class="text-xs text-gray-400 mt-0.5">http://localhost:5000</p>
+        </div>
+        <div
+          id="db-badge"
+          class="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border bg-yellow-50 text-yellow-600 border-yellow-200"
+        >
+          <span class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
+          <span id="db-text">Checking…</span>
+        </div>
+      </header>
+
+      <!-- Page content -->
+      <div class="flex-1 overflow-y-auto bg-gray-100 p-8">
+        <!-- ══ TAB: MANAGE STUDENTS ══════════════════════════ -->
+        <div id="view-students" style="display: block">
+          <div class="max-w-5xl space-y-6">
+            <!-- Add Student Card -->
+            <div
+              class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6"
+            >
+              <h3
+                class="text-base font-semibold text-gray-700 mb-5 flex items-center gap-2"
+              >
+                <span class="bg-indigo-100 text-indigo-600 rounded-lg p-1.5">
+                  <i class="fa-solid fa-user-plus text-sm"></i>
+                </span>
+                Add New Student
+              </h3>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label
+                    class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+                    >Roll Number</label
+                  >
+                  <input
+                    type="text"
+                    id="roll-input"
+                    placeholder="e.g. CS001"
+                    class="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 transition"
+                    onkeydown="if (event.key === 'Enter') addStudent();"
+                  />
+                </div>
+                <div>
+                  <label
+                    class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+                    >Full Name</label
+                  >
+                  <input
+                    type="text"
+                    id="name-input"
+                    placeholder="e.g. Alice Johnson"
+                    class="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 transition"
+                    onkeydown="if (event.key === 'Enter') addStudent();"
+                  />
+                </div>
+              </div>
+              <div class="mt-4 flex items-center gap-4">
+                <button
+                  onclick="addStudent()"
+                  class="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white px-6 py-2.5 rounded-xl text-sm font-semibold shadow transition-all flex items-center gap-2"
+                >
+                  <i class="fa-solid fa-plus"></i> Add Student
+                </button>
+                <span id="add-msg" class="text-sm font-semibold"></span>
+              </div>
+            </div>
+
+            <!-- Roster Table Card -->
+            <div
+              class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"
+            >
+              <div
+                class="px-6 py-4 border-b border-gray-100 flex items-center justify-between"
+              >
+                <h3 class="text-base font-semibold text-gray-700">
+                  <i class="fa-solid fa-list text-gray-400 mr-2"></i>Student
+                  Roster
+                </h3>
+                <span
+                  id="roster-count"
+                  class="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full"
+                ></span>
+              </div>
+              <table class="w-full text-sm text-left">
+                <thead
+                  class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b"
+                >
+                  <tr>
+                    <th class="px-6 py-3 font-semibold w-12">#</th>
+                    <th class="px-6 py-3 font-semibold">Roll Number</th>
+                    <th class="px-6 py-3 font-semibold">Full Name</th>
+                    <th class="px-6 py-3 font-semibold">Added On</th>
+                    <th class="px-6 py-3 font-semibold text-center w-20">
+                      Delete
+                    </th>
+                  </tr>
+                </thead>
+                <tbody id="student-tbody" class="divide-y divide-gray-100">
+                  <tr>
+                    <td
+                      colspan="5"
+                      class="px-6 py-10 text-center text-gray-400 text-sm"
+                    >
+                      <i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading…
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ TAB: MARK ATTENDANCE ══════════════════════════ -->
+        <div id="view-attendance" style="display: none">
+          <div class="max-w-5xl space-y-6">
+            <!-- Date + Buttons -->
+            <div
+              class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-wrap items-end justify-between gap-4"
+            >
+              <div>
+                <label
+                  class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+                >
+                  <i class="fa-regular fa-calendar text-green-500 mr-1"></i
+                  >Attendance Date
+                </label>
+                <input
+                  type="date"
+                  id="mark-date"
+                  class="border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400 transition"
+                />
+              </div>
+              <div class="flex gap-3">
+                <button
+                  onclick="loadAttendance()"
+                  class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-5 py-2.5 rounded-xl text-sm font-semibold transition flex items-center gap-2"
+                >
+                  <i class="fa-solid fa-rotate-right"></i> Load
+                </button>
+                <button
+                  onclick="saveAttendance()"
+                  class="bg-green-600 hover:bg-green-700 active:scale-95 text-white px-6 py-2.5 rounded-xl text-sm font-semibold shadow transition-all flex items-center gap-2"
+                >
+                  <i class="fa-solid fa-floppy-disk"></i> Save Attendance
+                </button>
+              </div>
+            </div>
+
+            <!-- Feedback -->
+            <div
+              id="att-msg"
+              style="display: none"
+              class="px-5 py-3 rounded-xl text-sm font-semibold text-center"
+            ></div>
+
+            <!-- Attendance Table -->
+            <div
+              class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"
+            >
+              <div class="px-6 py-4 border-b border-gray-100">
+                <h3 class="text-base font-semibold text-gray-700">
+                  <i class="fa-solid fa-clipboard-check text-green-500 mr-2"></i
+                  >Mark Each Student
+                </h3>
+                <p class="text-xs text-gray-400 mt-1">
+                  Re-submit to correct a mistake — records are overwritten.
+                </p>
+              </div>
+              <table class="w-full text-sm text-left">
+                <thead
+                  class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b"
+                >
+                  <tr>
+                    <th class="px-6 py-3 font-semibold w-12">#</th>
+                    <th class="px-6 py-3 font-semibold">Roll No</th>
+                    <th class="px-6 py-3 font-semibold">Name</th>
+                    <th
+                      class="px-6 py-3 font-semibold text-center w-28 text-green-600"
+                    >
+                      Present
+                    </th>
+                    <th
+                      class="px-6 py-3 font-semibold text-center w-28 text-red-500"
+                    >
+                      Absent
+                    </th>
+                  </tr>
+                </thead>
+                <tbody id="att-tbody" class="divide-y divide-gray-100">
+                  <tr>
+                    <td
+                      colspan="5"
+                      class="px-6 py-10 text-center text-gray-400 text-sm"
+                    >
+                      Select a date and click Load.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ TAB: VIEW RECORDS ═════════════════════════════ -->
+        <div id="view-records" style="display: none">
+          <div class="max-w-5xl space-y-6">
+            <!-- Date + Stats -->
+            <div
+              class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6"
+            >
+              <div class="flex flex-wrap items-end gap-6">
+                <div>
+                  <label
+                    class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5"
+                  >
+                    <i class="fa-regular fa-calendar text-blue-500 mr-1"></i
+                    >View Date
+                  </label>
+                  <input
+                    type="date"
+                    id="record-date"
+                    class="border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
+                  />
+                </div>
+                <div class="flex gap-3 flex-wrap">
+                  <div
+                    class="bg-blue-50 border border-blue-100 rounded-xl px-5 py-3 text-center min-w-[80px]"
+                  >
+                    <div
+                      class="text-2xl font-extrabold text-blue-600"
+                      id="stat-total"
+                    >
+                      —
+                    </div>
+                    <div class="text-xs text-blue-400 font-medium mt-0.5">
+                      Total
+                    </div>
+                  </div>
+                  <div
+                    class="bg-green-50 border border-green-100 rounded-xl px-5 py-3 text-center min-w-[80px]"
+                  >
+                    <div
+                      class="text-2xl font-extrabold text-green-600"
+                      id="stat-present"
+                    >
+                      —
+                    </div>
+                    <div class="text-xs text-green-400 font-medium mt-0.5">
+                      Present
+                    </div>
+                  </div>
+                  <div
+                    class="bg-red-50 border border-red-100 rounded-xl px-5 py-3 text-center min-w-[80px]"
+                  >
+                    <div
+                      class="text-2xl font-extrabold text-red-500"
+                      id="stat-absent"
+                    >
+                      —
+                    </div>
+                    <div class="text-xs text-red-400 font-medium mt-0.5">
+                      Absent
+                    </div>
+                  </div>
+                  <div
+                    class="bg-yellow-50 border border-yellow-100 rounded-xl px-5 py-3 text-center min-w-[80px]"
+                  >
+                    <div
+                      class="text-2xl font-extrabold text-yellow-500"
+                      id="stat-unmarked"
+                    >
+                      —
+                    </div>
+                    <div class="text-xs text-yellow-400 font-medium mt-0.5">
+                      Not Marked
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Records Table -->
+            <div
+              class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"
+            >
+              <div class="px-6 py-4 border-b border-gray-100">
+                <h3 class="text-base font-semibold text-gray-700">
+                  <i class="fa-solid fa-chart-bar text-blue-500 mr-2"></i
+                  >Attendance Report
+                </h3>
+              </div>
+              <table class="w-full text-sm text-left">
+                <thead
+                  class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b"
+                >
+                  <tr>
+                    <th class="px-6 py-3 font-semibold w-12">#</th>
+                    <th class="px-6 py-3 font-semibold">Roll No</th>
+                    <th class="px-6 py-3 font-semibold">Name</th>
+                    <th class="px-6 py-3 font-semibold text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="records-tbody" class="divide-y divide-gray-100">
+                  <tr>
+                    <td
+                      colspan="4"
+                      class="px-6 py-10 text-center text-gray-400 text-sm"
+                    >
+                      Select a date to view records.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- /page content -->
+    </div>
+    <!-- /main -->
+
+    <script>
+      // ─────────────────────────────────────────
+      // INIT
+      // ─────────────────────────────────────────
+      const TODAY = new Date().toISOString().split("T")[0];
+
+      document.addEventListener("DOMContentLoaded", function () {
+        document.getElementById("mark-date").value = TODAY;
+        document.getElementById("record-date").value = TODAY;
+
+        document
+          .getElementById("mark-date")
+          .addEventListener("change", loadAttendance);
+        document
+          .getElementById("record-date")
+          .addEventListener("change", loadRecords);
+
+        checkHealth();
+        activateNav("students");
+        fetchStudents();
+      });
+
+      // ─────────────────────────────────────────
+      // TAB SWITCHING
+      // Using inline style display directly — no CSS class conflicts possible
+      // ─────────────────────────────────────────
+      var TABS = ["students", "attendance", "records"];
+
+      var TITLES = {
+        students: "Manage Students",
+        attendance: "Mark Attendance",
+        records: "View Records",
+      };
+
+      function switchTab(name) {
+        // Hide all panels using inline style
+        TABS.forEach(function (t) {
+          document.getElementById("view-" + t).style.display = "none";
+        });
+
+        // Show chosen panel
+        document.getElementById("view-" + name).style.display = "block";
+
+        // Update nav highlight
+        activateNav(name);
+
+        // Update header
+        document.getElementById("page-title").textContent =
+          TITLES[name] || name;
+
+        // Load data
+        if (name === "students") fetchStudents();
+        if (name === "attendance") loadAttendance();
+        if (name === "records") loadRecords();
+      }
+
+      function activateNav(name) {
+        document.querySelectorAll(".nav-btn").forEach(function (btn) {
+          btn.classList.remove("bg-gray-700", "text-white");
+          btn.classList.add("text-gray-400");
+        });
+        var active = document.getElementById("nav-" + name);
+        if (active) {
+          active.classList.add("bg-gray-700", "text-white");
+          active.classList.remove("text-gray-400");
+        }
+      }
+
+      // ─────────────────────────────────────────
+      // DB HEALTH
+      // ─────────────────────────────────────────
+      function checkHealth() {
+        fetch("/api/health")
+          .then(function (res) {
+            return res.json();
+          })
+          .then(function (data) {
+            var badge = document.getElementById("db-badge");
+            var txt = document.getElementById("db-text");
+            if (data.status === "ok") {
+              badge.className =
+                "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border bg-green-50 text-green-700 border-green-200";
+              badge.querySelector("span").className =
+                "w-2 h-2 rounded-full bg-green-500 animate-pulse";
+              txt.textContent = "Connected";
+            } else {
+              throw new Error();
+            }
+          })
+          .catch(function () {
+            var badge = document.getElementById("db-badge");
+            badge.className =
+              "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border bg-red-50 text-red-600 border-red-200";
+            badge.querySelector("span").className =
+              "w-2 h-2 rounded-full bg-red-500";
+            document.getElementById("db-text").textContent = "DB Error";
+          });
+      }
+
+      // ─────────────────────────────────────────
+      // MANAGE STUDENTS
+      // ─────────────────────────────────────────
+      function fetchStudents() {
+        var tbody = document.getElementById("student-tbody");
+        tbody.innerHTML =
+          '<tr><td colspan="5" class="px-6 py-10 text-center text-gray-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading students…</td></tr>';
+
+        fetch("/api/students")
+          .then(function (res) {
+            return res.json();
+          })
+          .then(function (list) {
+            var countEl = document.getElementById("roster-count");
+
+            if (!list || list.length === 0) {
+              countEl.textContent = "";
+              tbody.innerHTML =
+                '<tr><td colspan="5" class="px-6 py-12 text-center text-gray-400"><i class="fa-solid fa-users-slash text-3xl mb-3 block text-gray-300"></i><p class="font-semibold">No students yet</p><p class="text-xs mt-1">Use the form above to add your first student.</p></td></tr>';
+              return;
+            }
+
+            countEl.textContent =
+              list.length + " student" + (list.length !== 1 ? "s" : "");
+
+            var rows = "";
+            list.forEach(function (s, i) {
+              rows +=
+                '<tr class="hover:bg-gray-50 transition-colors">' +
+                '<td class="px-6 py-4 text-gray-400">' +
+                (i + 1) +
+                "</td>" +
+                '<td class="px-6 py-4"><span class="bg-indigo-50 text-indigo-700 border border-indigo-100 font-mono text-xs px-2.5 py-1 rounded-lg font-semibold">' +
+                esc(s.roll_number) +
+                "</span></td>" +
+                '<td class="px-6 py-4 font-medium text-gray-800">' +
+                esc(s.name) +
+                "</td>" +
+                '<td class="px-6 py-4 text-gray-400 text-xs">' +
+                esc(s.created_at || "—") +
+                "</td>" +
+                '<td class="px-6 py-4 text-center"><button onclick="deleteStudent(' +
+                s.id +
+                ",'" +
+                esc(s.name) +
+                '\')" class="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-all"><i class="fa-solid fa-trash-can"></i></button></td>' +
+                "</tr>";
+            });
+            tbody.innerHTML = rows;
+          })
+          .catch(function () {
+            document.getElementById("student-tbody").innerHTML =
+              '<tr><td colspan="5" class="px-6 py-10 text-center text-red-400"><i class="fa-solid fa-circle-exclamation text-2xl mb-2 block"></i>Could not reach Flask. Is the server running?</td></tr>';
+          });
+      }
+
+      function addStudent() {
+        var roll = document.getElementById("roll-input").value.trim();
+        var name = document.getElementById("name-input").value.trim();
+        var msgEl = document.getElementById("add-msg");
+        var rollInput = document.getElementById("roll-input");
+        var nameInput = document.getElementById("name-input");
+
+        // Clear previous validation states
+        rollInput.classList.remove("input-error");
+        nameInput.classList.remove("input-error");
+        msgEl.className = "text-sm font-semibold";
+
+        // Client-side validation
+        var errors = [];
+
+        if (!roll) {
+          errors.push("Roll Number is required");
+          rollInput.classList.add("input-error");
+        } else if (!/^[A-Za-z0-9]{3,20}$/.test(roll)) {
+          errors.push("Roll Number must be 3-20 alphanumeric characters");
+          rollInput.classList.add("input-error");
+        }
+
+        if (!name) {
+          errors.push("Name is required");
+          nameInput.classList.add("input-error");
+        } else if (!/^[A-Za-z\s\-\'\.]{2,100}$/.test(name)) {
+          errors.push(
+            "Name must be 2-100 characters with letters, spaces, hyphens, apostrophes, or periods",
+          );
+          nameInput.classList.add("input-error");
+        }
+
+        if (errors.length > 0) {
+          flash(msgEl, errors.join(". "), "error");
+          return;
+        }
+
+        // Disable form and show loading state
+        var submitBtn = event.target;
+        submitBtn.classList.add("btn-loading");
+        submitBtn.disabled = true;
+
+        fetch("/api/students", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ roll_number: roll, name: name }),
+        })
+          .then(function (res) {
+            return res.json().then(function (d) {
+              return { ok: res.ok, d: d };
+            });
+          })
+          .then(function (r) {
+            if (r.ok) {
+              flash(msgEl, "✔ " + r.d.message, "success");
+              document.getElementById("roll-input").value = "";
+              document.getElementById("name-input").value = "";
+              document.getElementById("roll-input").focus();
+              fetchStudents();
+            } else {
+              flash(
+                msgEl,
+                "✖ " + (r.d.error || "Failed to add student."),
+                "error",
+              );
+            }
+          })
+          .catch(function (err) {
+            console.error("Add student error:", err);
+            flash(msgEl, "✖ Network error — check connection.", "error");
+          })
+          .finally(function () {
+            // Re-enable form
+            submitBtn.classList.remove("btn-loading");
+            submitBtn.disabled = false;
+          });
+      }
+
+      function deleteStudent(id, name) {
+        if (
+          !confirm(
+            'Delete "' +
+              name +
+              '"?\n\nAll attendance records for this student will also be removed.',
+          )
+        )
+          return;
+        fetch("/api/students/" + id, { method: "DELETE" })
+          .then(function (res) {
+            if (res.ok) fetchStudents();
+            else alert("Delete failed.");
+          })
+          .catch(function () {
+            alert("Server error.");
+          });
+      }
+
+      // ─────────────────────────────────────────
+      // MARK ATTENDANCE
+      // ─────────────────────────────────────────
+      function loadAttendance() {
+        var date = document.getElementById("mark-date").value;
+        var tbody = document.getElementById("att-tbody");
+        if (!date) return;
+
+        tbody.innerHTML =
+          '<tr><td colspan="5" class="px-6 py-10 text-center text-gray-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading students for ' +
+          date +
+          "…</td></tr>";
+        document.getElementById("att-msg").style.display = "none";
+
+        fetch("/api/attendance?date=" + date)
+          .then(function (res) {
+            if (!res.ok) {
+              throw new Error("HTTP " + res.status);
+            }
+            return res.json();
+          })
+          .then(function (list) {
+            if (!list || list.length === 0) {
+              tbody.innerHTML =
+                '<tr><td colspan="5" class="px-6 py-12 text-center text-gray-400"><i class="fa-solid fa-users-slash text-3xl mb-3 block text-gray-300"></i><p class="font-semibold">No students found</p><p class="text-xs mt-1">Add students in the Manage Students tab first.</p></td></tr>';
+              return;
+            }
+
+            var rows = "";
+            list.forEach(function (s, i) {
+              var chkP =
+                s.status === "Present" || s.status === "Not Marked"
+                  ? "checked"
+                  : "";
+              var chkA = s.status === "Absent" ? "checked" : "";
+              rows +=
+                '<tr class="hover:bg-gray-50 transition-colors att-row" data-sid="' +
+                s.id +
+                '">' +
+                '<td class="px-6 py-4 text-gray-400">' +
+                (i + 1) +
+                "</td>" +
+                '<td class="px-6 py-4"><span class="bg-green-50 text-green-700 border border-green-100 font-mono text-xs px-2.5 py-1 rounded-lg font-semibold">' +
+                esc(s.roll_number) +
+                "</span></td>" +
+                '<td class="px-6 py-4 font-medium text-gray-800">' +
+                esc(s.name) +
+                "</td>" +
+                '<td class="px-6 py-4 text-center"><input type="radio" name="att-' +
+                s.id +
+                '" value="Present" ' +
+                chkP +
+                ' class="w-4 h-4 accent-green-600 cursor-pointer" /></td>' +
+                '<td class="px-6 py-4 text-center"><input type="radio" name="att-' +
+                s.id +
+                '" value="Absent" ' +
+                chkA +
+                ' class="w-4 h-4 accent-red-500 cursor-pointer" /></td>' +
+                "</tr>";
+            });
+            tbody.innerHTML = rows;
+          })
+          .catch(function (err) {
+            console.error("Load attendance error:", err);
+            tbody.innerHTML =
+              '<tr><td colspan="5" class="px-6 py-10 text-center text-red-400"><i class="fa-solid fa-circle-exclamation text-2xl mb-2 block"></i>Could not load attendance. Check server connection.</td></tr>';
+          });
+      }
+
+      function saveAttendance() {
+        var date = document.getElementById("mark-date").value;
+        if (!date) {
+          showAttMsg("Please select a date first.", "error");
+          return;
+        }
+
+        var records = [];
+        document.querySelectorAll(".att-row").forEach(function (row) {
+          var sid = parseInt(row.getAttribute("data-sid"));
+          var picked = document.querySelector(
+            'input[name="att-' + sid + '"]:checked',
+          );
+          if (picked) records.push({ student_id: sid, status: picked.value });
+        });
+
+        if (!records.length) {
+          showAttMsg("No students loaded. Click Load first.", "error");
+          return;
+        }
+
+        fetch("/api/attendance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date: date, records: records }),
+        })
+          .then(function (res) {
+            return res.json().then(function (d) {
+              return { ok: res.ok, d: d };
+            });
+          })
+          .then(function (r) {
+            if (r.ok) showAttMsg("✔ " + r.d.message, "success");
+            else showAttMsg("✖ " + (r.d.error || "Save failed."), "error");
+          })
+          .catch(function () {
+            showAttMsg("✖ Server error — check terminal.", "error");
+          });
+      }
+
+      function showAttMsg(text, type) {
+        var el = document.getElementById("att-msg");
+        el.textContent = text;
+        el.className =
+          "px-5 py-3 rounded-xl text-sm font-semibold text-center " +
+          (type === "success"
+            ? "bg-green-100 text-green-700"
+            : "bg-red-100 text-red-600");
+        el.style.display = "block";
+        clearTimeout(el._t);
+        el._t = setTimeout(function () {
+          el.style.display = "none";
+        }, 4000);
+      }
+
+      // ─────────────────────────────────────────
+      // VIEW RECORDS
+      // ─────────────────────────────────────────
+      function loadRecords() {
+        var date = document.getElementById("record-date").value;
+        var tbody = document.getElementById("records-tbody");
+        if (!date) return;
+
+        tbody.innerHTML =
+          '<tr><td colspan="4" class="px-6 py-10 text-center text-gray-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading records for ' +
+          date +
+          "…</td></tr>";
+        ["stat-total", "stat-present", "stat-absent", "stat-unmarked"].forEach(
+          function (id) {
+            document.getElementById(id).textContent = "—";
+          },
+        );
+
+        fetch("/api/attendance?date=" + date)
+          .then(function (res) {
+            return res.json();
+          })
+          .then(function (list) {
+            var present = 0,
+              absent = 0,
+              notMarked = 0;
+
+            if (!list || list.length === 0) {
+              tbody.innerHTML =
+                '<tr><td colspan="4" class="px-6 py-12 text-center text-gray-400"><i class="fa-solid fa-magnifying-glass text-3xl mb-3 block text-gray-300"></i><p class="font-semibold">No students found</p></td></tr>';
+              return;
+            }
+
+            var rows = "";
+            list.forEach(function (s, i) {
+              var badge = "";
+              if (s.status === "Present") {
+                present++;
+                badge =
+                  '<span class="inline-flex items-center gap-1 bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold"><i class="fa-solid fa-check"></i> Present</span>';
+              } else if (s.status === "Absent") {
+                absent++;
+                badge =
+                  '<span class="inline-flex items-center gap-1 bg-red-100 text-red-600 px-3 py-1 rounded-full text-xs font-bold"><i class="fa-solid fa-xmark"></i> Absent</span>';
+              } else {
+                notMarked++;
+                badge =
+                  '<span class="inline-flex items-center gap-1 bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs font-bold"><i class="fa-regular fa-circle"></i> Not Marked</span>';
+              }
+              rows +=
+                '<tr class="hover:bg-gray-50 transition-colors">' +
+                '<td class="px-6 py-4 text-gray-400">' +
+                (i + 1) +
+                "</td>" +
+                '<td class="px-6 py-4"><span class="bg-blue-50 text-blue-700 border border-blue-100 font-mono text-xs px-2.5 py-1 rounded-lg font-semibold">' +
+                esc(s.roll_number) +
+                "</span></td>" +
+                '<td class="px-6 py-4 font-medium text-gray-800">' +
+                esc(s.name) +
+                "</td>" +
+                '<td class="px-6 py-4 text-center">' +
+                badge +
+                "</td>" +
+                "</tr>";
+            });
+            tbody.innerHTML = rows;
+
+            document.getElementById("stat-total").textContent = list.length;
+            document.getElementById("stat-present").textContent = present;
+            document.getElementById("stat-absent").textContent = absent;
+            document.getElementById("stat-unmarked").textContent = notMarked;
+          })
+          .catch(function () {
+            tbody.innerHTML =
+              '<tr><td colspan="4" class="px-6 py-10 text-center text-red-400"><i class="fa-solid fa-circle-exclamation text-2xl mb-2 block"></i>Could not load records.</td></tr>';
+          });
+      }
+
+      // ─────────────────────────────────────────
+      // UTILITIES
+      // ─────────────────────────────────────────
+      function esc(s) {
+        return String(s == null ? "" : s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function flash(el, text, type) {
+        el.textContent = text;
+        el.className =
+          "text-sm font-semibold " +
+          (type === "success" ? "text-green-600" : "text-red-500");
+        clearTimeout(el._t);
+        el._t = setTimeout(function () {
+          el.textContent = "";
+        }, 4500);
+      }
+    </script>
+  </body>
+</html>
